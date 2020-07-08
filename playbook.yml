@@ -1,0 +1,101 @@
+---
+- hosts: all
+  become: yes
+
+  handlers:
+  - name: disable swap
+    shell: |
+      swapoff -a
+  - name: sysctl system
+    shell: |
+      sysctl --system
+  - name: reload firewall
+    shell: |
+      firewall-cmd --reload
+  - name: start minikube
+    shell: |
+      minikube start --driver=none
+  - name: enable kubelet.service
+    service:
+      name: kubelet.service
+      enabled: yes
+      state: started
+
+  tasks:
+  # Disable swap
+  - name: disable swap in fstab
+    replace:
+      path: /etc/fstab
+      regexp: '^([^#].*?\sswap\s+swap\s+.*)$'
+      replace: '# \1'
+    notify:
+    - disable swap
+
+  # Let iptables see bridged traffic
+  - name: modprob
+    modprobe:
+      name: br_netfilter
+      state: present
+    notify:
+    - sysctl system
+  - name: k8s sysctl config
+    template:
+      src: etc/sysctl.d/k8s.conf
+      dest: /etc/sysctl.d/k8s.conf
+    notify:
+    - sysctl system
+
+  # Kubernetes v1.18.2 requires conntrack to be installed in root's path
+  - name: ensure conntrack
+    yum:
+      name: conntrack-tools
+      state: latest
+
+  # Docker
+  - name: ensure docker installed
+    yum:
+      name: docker
+      state: latest
+  - name: ensure docker service
+    service:
+      name: docker
+      enabled: yes
+      state: started
+
+  # Firewall
+  - name: minikube api server port
+    firewalld:
+      port: 8443/tcp
+      permanent: yes
+      state: enabled
+    notify:
+    - reload firewall
+
+  # Kubernetes
+  - name: add kubernetes repo for yum
+    template:
+      src: etc/yum.repos.d/kubernetes.repo
+      dest: /etc/yum.repos.d/kubernetes.repo
+
+  - name: Put SELinux in permissive mode, logging actions that would be blocked.
+    selinux:
+      policy: targeted
+      state: permissive
+
+  # Install kubectl
+  - name: install kubectl
+    yum:
+      name: kubectl
+      state: latest
+
+  # Download and install minikube
+  - name: download minikube rpm
+    get_url:
+      url: https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+      dest: /tmp/minikube-latest.x86_64.rpm
+  - name: install minikube
+    yum:
+      name: /tmp/minikube-latest.x86_64.rpm
+    notify:
+    - start minikube
+    - enable kubelet.service
