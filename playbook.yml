@@ -9,9 +9,6 @@
   - name: sysctl system
     shell: |
       sysctl --system
-  - name: reload firewall
-    shell: |
-      firewall-cmd --reload
   - name: start minikube
     shell: |
       minikube start --driver=none
@@ -62,20 +59,16 @@
       enabled: yes
       state: started
 
-  # Firewall
-  - name: minikube api server port
-    firewalld:
-      port: 8443/tcp
-      permanent: yes
-      state: enabled
-    notify:
-    - reload firewall
-
   # Kubernetes
   - name: add kubernetes repo for yum
-    template:
-      src: etc/yum.repos.d/kubernetes.repo
-      dest: /etc/yum.repos.d/kubernetes.repo
+    yum_repository:
+      name: Kubernetes
+      description: Kubernetes
+      baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+      enabled: yes
+      gpgcheck: yes
+      repo_gpgcheck: yes
+      gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
 
   - name: Put SELinux in permissive mode, logging actions that would be blocked.
     selinux:
